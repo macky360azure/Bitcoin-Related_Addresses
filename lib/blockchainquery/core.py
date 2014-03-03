@@ -10,6 +10,8 @@ from lib.marketquery.core import getBitcoinPrice
 _address_query_cache = {}
 _block_query_cache = {}
 CACHE_LIFE_IN_SECONDS = 300
+_get_address_info_cache_misses = 0
+_get_block_info_cache_misses = 0
 
 def SATOSHIS_IN_A_BITCOIN():
     return 100000000
@@ -26,7 +28,8 @@ def getAddressInfo(*addresses):
     
     '''  
 
-    global _address_query_cache
+    global _get_address_info_cache_misses 
+    global _get_address_info_misses
     btc_info_addr_json_list = []
     for addr in addresses:
 
@@ -36,6 +39,8 @@ def getAddressInfo(*addresses):
                 btc_info_addr_json_list.append(_address_query_cache[addr][1])
                 continue
 
+        _get_address_info_cache_misses  +=1
+        
         # If we didn't find in cache then we look it up
         balanceurl = 'http://blockchain.info/address/{0}?format=json'
         formatted = balanceurl.format(addr)
@@ -69,6 +74,7 @@ def getBlockInfo(*heights):
     '''  
 
     global _block_query_cache
+    global _get_block_info_cache_misses
     btc_info_block_json_list = []
     for height in heights:
 
@@ -76,6 +82,8 @@ def getBlockInfo(*heights):
         if height in _block_query_cache:
             btc_info_block_json_list.append(_block_query_cache[height][1])
             continue
+
+        _get_block_info_cache_misses +=1
 
         # If we didn't find in cache then we look it up
         blockurl = 'https://blockchain.info/block-height/{0}?format=json'
@@ -129,20 +137,22 @@ def doFixTransactionResultValue(addressobject):
         tx['my_est_USD_result']=result * rate / SATOSHIS_IN_A_BITCOIN()  #lets save the USD value at the time of the transaction
 
 
-def getRelatedAddresses(recursive = False, related_addr = None,  *addresses):
-    '''Returns a list of related addresses. Related addresses are defined as address that
+def getRelatedAddresses(recursive = False, related_addr_dic = None,  *addresses):
+    '''Returns a dictionary of related addresses (key=address, relationidentified= address, relationtype=[Change,Fellow]). 
+    Related addresses are defined as address that
     have been used in conjunction with the provided address on the input side of a transaction. The 
-    logic is that they same person must control all the input private keys.
+    logic is that they same person must control all the input private keys. 
     
     '''
 
     # This function relies on the fact that optional mutable objects persist accross calls
-    if(related_addr == None):
-        related_addr = set()
+    if(related_addr_dic == None):
+        related_addr_dic = {} 
 
 
     for addr in addresses:
-        related_addr.add(addr) # Add this address
+        if(not related_addr_dic.has_key(addr)):
+            related_addr_dic[addr] = {'relation':'none','relationtype':'root','txhash':'none'} # Add this address
         info = getAddressInfo(addr)[0]
         for tx in info['txs']:
 
@@ -159,34 +169,39 @@ def getRelatedAddresses(recursive = False, related_addr = None,  *addresses):
             # 3rd, if this address is an input for the tx, then fellow input addresses are related
             if(bool_addr_is_an_input):
                 smallest_input = 9999 * SATOSHIS_IN_A_BITCOIN()
+                newly_identified_related_addresses = []
                 for input in tx['inputs']:
                     if 'prev_out' in input:        
                         input_addr = input['prev_out']['addr']
                         if(smallest_input> int(input['prev_out']['value'])):
                            smallest_input = int(input['prev_out']['value']) 
                         # only scan if this address hasnt already been scanned
-                        if not input_addr in related_addr:
+                        if not related_addr_dic.has_key(input_addr):
+                            newly_identified_related_addresses.append(input_addr)
                             if recursive:
-                                newlydiscovered_related_addr = getRelatedAddresses(True, related_addr, input_addr)
-                                related_addr.union(newlydiscovered_related_addr)
+                                related_addr_dic[input_addr] = {'relation':addr,'relationtype':'fellow','txhash':tx['hash']} # Add this address
+                                #getRelatedAddresses(True, related_addr_dic, input_addr)
                             else:
-                                related_addr.add(input_addr) # add fellow inputs
+                                related_addr_dic[input_addr] = {'relation':addr,'relationtype':'fellow','txhash':tx['hash']} # Add this address
                 # 4th, if we are scanning for change addresses any address smaller than the biggest input (must have multiple inputs)
                 for output in tx['out']:
                     if len(tx['inputs'])>1:       
                         if(int(output['value'])<smallest_input):
                             output_addr = output['addr']
-                            if recursive:
-                                related_addr_before = related_addr.copy()
-                                newlydiscovered_related_addr = getRelatedAddresses(True, related_addr, output_addr)
-                                just_add_addr = newlydiscovered_related_addr - related_addr_before
-                                if(len(just_add_addr)>0):
-                                    pass
-                                related_addr.union(newlydiscovered_related_addr)
-                            else:
-                                related_addr.add(output_addr) # add fellow inputs
-
-    return related_addr
+                            # only scan if this address hasnt already been scanned
+                            if not related_addr_dic.has_key(output_addr):
+                                newly_identified_related_addresses.append(output_addr)
+                                if recursive:
+                                    related_addr_dic[output_addr] = {'relation':addr,'relationtype':'change','txhash':tx['hash']} # Add this address
+                                    #getRelatedAddresses(True, related_addr_dic, output_addr)
+                                else:
+                                    related_addr_dic[output_addr] = {'relation':addr,'relationtype':'change','txhash':tx['hash']} # Add this address
+                # 5th, recurse if required
+                if recursive:
+                    for addr in newly_identified_related_addresses:
+                          getRelatedAddresses(True, related_addr_dic, addr)
+                          
+    return related_addr_dic
 
 
 def run_tests():

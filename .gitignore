@@ -8,6 +8,7 @@
 
 # Visual Studio Python Project File
 *.pyproj
+*.sln
 
 
 #################
