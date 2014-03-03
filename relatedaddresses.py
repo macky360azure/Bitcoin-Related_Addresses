@@ -5,7 +5,7 @@ from lib.bitcoinvalidation import addressvalidation as bv
 
 EXAMPLE_ADDRESS = '18WaqDnNRbXpbfgGAv5bC7spb366c4CCfX'
 
-def generate_related_report(recursive, indent, suppresszero, *addresses):
+def generate_related_report(recursive, indent, suppresszero, includechangeinputs, *addresses):
     '''Uses various techniques to identify addresses related and generates a report
 
     '''
@@ -22,7 +22,7 @@ def generate_related_report(recursive, indent, suppresszero, *addresses):
     print('')
     print("Please wait...") 
 
-    related_addr_dict = bq.getRelatedAddresses(recursive, None, *addresses)
+    related_addr_dict = bq.getRelatedAddresses(recursive, includechangeinputs, None, *addresses)
     running_balance = 0
   
     #Generate text report
@@ -63,10 +63,10 @@ def print_audit_report_body(related_addr_dict, indent,suppresszero, parent_addr 
                 MAX_DEPTH = 17
                 if(indent):
                     if(depth<MAX_DEPTH):
-                        indents = ' ' * (depth-1) + ('-' if value['relationtype'] == 'fellow' else '~')
+                        indents = ' ' * (depth-1) + ('=' if value['relationtype'] == 'fellow' else '>' if value['relationtype']=='change' else '<')
                     else:
                         prefix = ' d+' + str(depth-MAX_DEPTH+1)
-                        indents =  prefix + ' ' * (MAX_DEPTH-len(prefix)-2) + ('-' if value['relationtype'] == 'fellow' else '~')
+                        indents =  prefix + ' ' * (MAX_DEPTH-len(prefix)-2) + ('=' if value['relationtype'] == 'fellow' else '>' if value['relationtype']=='change' else '<')
                 else:
                     indents=''
                 if not suppresszero or balance>0:
@@ -87,7 +87,8 @@ def show_help():
     print('  -s Suppress addresses with a zero balance')
     print('  -i Indent to show relationships; useful when doing a recursive scan')
     print('  -t Test addresses {0} used for scan'.format(EXAMPLE_ADDRESS))
-    print('  -c Calls made to external servers are reported')
+    print('  -e Calls made to external servers are reported')
+    print('  -c Includes inputs that appear to be using a related addresses to store change')
     print('')
     print('eg. {0} -r -s {1}'.format(filename.upper(),EXAMPLE_ADDRESS))
     print('')
@@ -101,6 +102,7 @@ if __name__ == '__main__':
     suppresszero = False
     indent = False
     reportcalls = False
+    includechangeinputs = False
     addresses = []
     unknownflags = []
     if len(sys.argv) ==1: showhelp = True 
@@ -111,7 +113,8 @@ if __name__ == '__main__':
             elif flag == '-r': recurse = True
             elif flag == '-s': suppresszero = True
             elif flag == '-i': indent = True
-            elif flag == '-c': reportcalls = True
+            elif flag == '-e': reportcalls = True
+            elif flag == '-c': includechangeinputs = True
             elif bv.check_bitcoin_address(flag):
                 addresses.append(flag)
             else:
@@ -126,9 +129,9 @@ if __name__ == '__main__':
     elif showhelp:
         show_help()
     elif usetestaddress:
-        generate_related_report(recurse, indent, suppresszero, EXAMPLE_ADDRESS)
+        generate_related_report(recurse, indent, suppresszero, includechangeinputs, EXAMPLE_ADDRESS)
     else :
-        generate_related_report(recurse, indent, suppresszero, *addresses)
+        generate_related_report(recurse, indent, suppresszero, includechangeinputs, *addresses)
     
     if indent:
         print('')
@@ -136,8 +139,11 @@ if __name__ == '__main__':
         print('------------------')
         print('')
         print('None: Root address, this is one of the keys you searched for')
-        print('-   : Fellow input address')
-        print('~   : Change address')
+        print('=   : Fellow input address of its parent')
+        print('>   : Used as a change address by its parent')
+        if includechangeinputs:
+            print('<   : Used its parent as a change address. {May be unreliable}')
+
         
         
     if reportcalls:

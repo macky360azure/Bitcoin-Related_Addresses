@@ -137,13 +137,17 @@ def doFixTransactionResultValue(addressobject):
         tx['my_est_USD_result']=result * rate / SATOSHIS_IN_A_BITCOIN()  #lets save the USD value at the time of the transaction
 
 
-def getRelatedAddresses(recursive = False, related_addr_dic = None,  *addresses):
+def getRelatedAddresses(recursive = False, scan_change_inputs = False, related_addr_dic = None,  *addresses):
     '''Returns a dictionary of related addresses (key=address, relationidentified= address, relationtype=[Change,Fellow]). 
     Related addresses are defined as address that
     have been used in conjunction with the provided address on the input side of a transaction. The 
     logic is that they same person must control all the input private keys. 
     
     '''
+
+    A_LOT_OF_BTC = 9999 * SATOSHIS_IN_A_BITCOIN()
+    DUST = 100000
+    MAX_RELATED = 200
 
     # This function relies on the fact that optional mutable objects persist accross calls
     if(related_addr_dic == None):
@@ -156,50 +160,72 @@ def getRelatedAddresses(recursive = False, related_addr_dic = None,  *addresses)
         info = getAddressInfo(addr)[0]
         for tx in info['txs']:
 
+            newly_identified_related_addresses = []
+            
             # 1st check if we have only 1 or 2 outputs. Any more and this may be a coinjoin transaction
             if len(tx['out']) == 0 or len(tx['out']) >2:    
                 break           
-            # 2nd scan To see if this address is one of the inputs
+            # 2nd scan To see if this address is one of the inputs or outputs
             bool_addr_is_an_input = False
+            bool_addr_is_an_output = False
             for input in tx['inputs']:
                 if 'prev_out' in input:        
                     if(addr == input['prev_out']['addr']):
                         bool_addr_is_an_input  = True
                         break
+            for output in tx['out']:
+                if(addr == output['addr']):
+                    bool_addr_is_an_output  = True
+                    break
+
             # 3rd, if this address is an input for the tx, then fellow input addresses are related
-            if(bool_addr_is_an_input):
-                smallest_input = 9999 * SATOSHIS_IN_A_BITCOIN()
-                newly_identified_related_addresses = []
-                for input in tx['inputs']:
-                    if 'prev_out' in input:        
-                        input_addr = input['prev_out']['addr']
-                        if(smallest_input> int(input['prev_out']['value'])):
-                           smallest_input = int(input['prev_out']['value']) 
-                        # only scan if this address hasnt already been scanned
+            smallest_input = A_LOT_OF_BTC
+            for input in tx['inputs']:
+                if 'prev_out' in input:        
+                    input_addr = input['prev_out']['addr']
+                    if(smallest_input> int(input['prev_out']['value'])):
+                        smallest_input = int(input['prev_out']['value']) 
+                    # only scan if this address hasnt already been scanned
+                    if(bool_addr_is_an_input):
                         if not related_addr_dic.has_key(input_addr):
-                            newly_identified_related_addresses.append(input_addr)
-                            if recursive:
+                            if len(related_addr_dic)<=MAX_RELATED:
+                                newly_identified_related_addresses.append(input_addr)
                                 related_addr_dic[input_addr] = {'relation':addr,'relationtype':'fellow','txhash':tx['hash']} # Add this address
-                                #getRelatedAddresses(True, related_addr_dic, input_addr)
-                            else:
-                                related_addr_dic[input_addr] = {'relation':addr,'relationtype':'fellow','txhash':tx['hash']} # Add this address
-                # 4th, if we are scanning for change addresses any address smaller than the biggest input (must have multiple inputs)
+            
+            # 4th, if we are scanning for change addresses any address smaller than the biggest input (must have multiple inputs and 2 outputs)
+            if len(tx['inputs'])>1 and len(tx['out'])==2 and bool_addr_is_an_input:
                 for output in tx['out']:
-                    if len(tx['inputs'])>1:       
-                        if(int(output['value'])<smallest_input):
-                            output_addr = output['addr']
-                            # only scan if this address hasnt already been scanned
-                            if not related_addr_dic.has_key(output_addr):
+                    if(int(output['value'])<smallest_input):
+                        output_addr = output['addr']
+                        # only scan if this address hasnt already been scanned
+                        if not related_addr_dic.has_key(output_addr):
+                            if len(related_addr_dic)<=MAX_RELATED:
                                 newly_identified_related_addresses.append(output_addr)
-                                if recursive:
-                                    related_addr_dic[output_addr] = {'relation':addr,'relationtype':'change','txhash':tx['hash']} # Add this address
-                                    #getRelatedAddresses(True, related_addr_dic, output_addr)
-                                else:
-                                    related_addr_dic[output_addr] = {'relation':addr,'relationtype':'change','txhash':tx['hash']} # Add this address
-                # 5th, recurse if required
-                if recursive:
+                                related_addr_dic[output_addr] = {'relation':addr,'relationtype':'change','txhash':tx['hash']} # Add this address
+            
+            # 5th Check if this address is the change address for some other input. THIS APPEARS TO PRODUCE MANY FALSE POSITIVES 
+            if scan_change_inputs:
+                addr_is_a_change_address = False
+                if bool_addr_is_an_output and len(tx['inputs'])>1 and len(tx['out'])==2 and smallest_input <> A_LOT_OF_BTC:       
+                    for output in tx['out']:
+                        if(int(output['value'])<smallest_input and int(output['value']) >DUST and output['addr']==addr):
+                            # we are the change address, so all inputs must be related
+                            addr_is_a_change_address = True
+                            break
+                if addr_is_a_change_address:    
+                    for input in tx['inputs']:
+                        if 'prev_out' in input:        
+                            input_addr = input['prev_out']['addr']
+                            if not related_addr_dic.has_key(input_addr):
+                                if len(related_addr_dic)<=MAX_RELATED:
+                                    newly_identified_related_addresses.append(input_addr)
+                                    related_addr_dic[input_addr] = {'relation':addr,'relationtype':'parent change','txhash':tx['hash']} # Add this address
+                                    
+            # Recurse if required
+            if recursive:
+                if len(related_addr_dic)<=MAX_RELATED:
                     for addr in newly_identified_related_addresses:
-                          getRelatedAddresses(True, related_addr_dic, addr)
+                        getRelatedAddresses(True, scan_change_inputs, related_addr_dic, addr)
                           
     return related_addr_dic
 
