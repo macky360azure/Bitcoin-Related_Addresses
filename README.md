@@ -3,7 +3,7 @@ Bitcoin Related Addresses Finder
 
 Introduction
 ------------
-The Related Address Finder identifies and reports on any related Bitcoin addresses. This may be useful when attempting to identify muliple addresses controlled by the same owner.
+The Related Address Finder identifies and reports on any related Bitcoin addresses. This may be useful when attempting to identify muliple addresses controlled by the same owner. This program leverages blockchain.info's api to obtain details on the transactions associated with the addresses being analysed.
 
 Usage Instructions
 ------------------
