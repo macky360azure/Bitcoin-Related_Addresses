@@ -5,7 +5,7 @@ from lib.bitcoinvalidation import addressvalidation as bv
 
 EXAMPLE_ADDRESS = '18WaqDnNRbXpbfgGAv5bC7spb366c4CCfX'
 
-def generate_related_report(recursive, indent, suppresszero, includechangeinputs, *addresses):
+def generate_related_report(recursive, indent, suppresszero, includechangeinputs, maxresult, *addresses):
     '''Uses various techniques to identify addresses related and generates a report
 
     '''
@@ -22,7 +22,7 @@ def generate_related_report(recursive, indent, suppresszero, includechangeinputs
     print('')
     print("Please wait...") 
 
-    related_addr_dict = bq.getRelatedAddresses(recursive, includechangeinputs, None, *addresses)
+    related_addr_dict = bq.getRelatedAddresses(recursive, includechangeinputs, maxresult, None, *addresses)
     running_balance = 0
   
     #Generate text report
@@ -33,7 +33,11 @@ def generate_related_report(recursive, indent, suppresszero, includechangeinputs
     else:
         print("Related Accounts") 
     print("-"*70)
-    print_audit_report_body(related_addr_dict,indent,suppresszero)
+    resultsshown = print_audit_report_body(related_addr_dict,indent,suppresszero)
+    if(len(related_addr_dict) == maxresult):
+        print('     ...Maximum Limit Reached...')
+    if(resultsshown <len(related_addr_dict)):
+        print('     ...{:d} Zero Balance Results Suppressed...'.format(maxresult - resultsshown))
     print("-"*70)
     
     # Running balance
@@ -63,10 +67,10 @@ def print_audit_report_body(related_addr_dict, indent,suppresszero, parent_addr 
                 MAX_DEPTH = 17
                 if(indent):
                     if(depth<MAX_DEPTH):
-                        indents = ' ' * (depth-1) + ('=' if value['relationtype'] == 'fellow' else '>' if value['relationtype']=='change' else '<')
+                        indents = ' ' * (depth-1) + ('=' if value['relationtype'] == 'fellow' else '>' if value['relationtype']=='change' else '?')
                     else:
                         prefix = ' d+' + str(depth-MAX_DEPTH+1)
-                        indents =  prefix + ' ' * (MAX_DEPTH-len(prefix)-2) + ('=' if value['relationtype'] == 'fellow' else '>' if value['relationtype']=='change' else '<')
+                        indents =  prefix + ' ' * (MAX_DEPTH-len(prefix)-2) + ('=' if value['relationtype'] == 'fellow' else '>' if value['relationtype']=='change' else '?')
                 else:
                     indents=''
                 if not suppresszero or balance>0:
@@ -81,7 +85,7 @@ def show_help():
     filename = os.path.basename(__file__)
     print('Reports the balances of any related bitcoin addresses.')
     print('')
-    print('{} [-r][-s][-d][-t] Address1 Address2 ...'.format(filename.upper()))
+    print('{} [-r][-s][-d][-t][-m] Address1 Address2 ...'.format(filename.upper()))
     print('')
     print('  -r Recursively scan for related addresses')
     print('  -s Suppress addresses with a zero balance')
@@ -89,6 +93,7 @@ def show_help():
     print('  -t Test addresses {0} used for scan'.format(EXAMPLE_ADDRESS))
     print('  -e Calls made to external servers are reported')
     print('  -c Includes inputs that appear to be using a related addresses to store change')
+    print('  -m Max results, enter as -m300 to limit results to 300. [Default:50]')
     print('')
     print('eg. {0} -r -s {1}'.format(filename.upper(),EXAMPLE_ADDRESS))
     print('')
@@ -105,6 +110,7 @@ if __name__ == '__main__':
     includechangeinputs = False
     addresses = []
     unknownflags = []
+    maxresults = 50
     if len(sys.argv) ==1: showhelp = True 
     else:
         for flag in sys.argv[1:]:
@@ -115,11 +121,17 @@ if __name__ == '__main__':
             elif flag == '-i': indent = True
             elif flag == '-e': reportcalls = True
             elif flag == '-c': includechangeinputs = True
+            elif flag.startswith('-m'): 
+                try:
+                    maxresults = int(flag[2:])
+                except:
+                    showhelp = True
+                if maxresults < 1:
+                    showhelp = True
             elif bv.check_bitcoin_address(flag):
                 addresses.append(flag)
             else:
                 unknownflags.append(flag)   
-    
     
     if len(unknownflags)>0:
         for flag in unknownflags:
@@ -129,20 +141,19 @@ if __name__ == '__main__':
     elif showhelp:
         show_help()
     elif usetestaddress:
-        generate_related_report(recurse, indent, suppresszero, includechangeinputs, EXAMPLE_ADDRESS)
+        generate_related_report(recurse, indent, suppresszero, includechangeinputs, maxresults, EXAMPLE_ADDRESS)
     else :
-        generate_related_report(recurse, indent, suppresszero, includechangeinputs, *addresses)
+        generate_related_report(recurse, indent, suppresszero, includechangeinputs, maxresults, *addresses)
     
     if indent:
         print('')
         print('Address Prefix Key')
         print('------------------')
-        print('')
         print('None: Root address, this is one of the keys you searched for')
         print('=   : Fellow input address of its parent')
         print('>   : Used as a change address by its parent')
         if includechangeinputs:
-            print('<   : Used its parent as a change address. {May be unreliable}')
+            print('?   : Used its parent as a change address. {May be unreliable}')
 
         
         
