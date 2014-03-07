@@ -8,13 +8,16 @@ The Related Address Finder identifies and reports on any related Bitcoin address
 Usage Instructions
 ------------------
 ```
-RELATEDADDRESSES.PY [-r][-s][-d][-t] Address1 Address2 ...
+RELATEDADDRESSES.PY [-r][-s][-d][-t][-m][-p] Address1 Address2 ...
 
   -r Recursively scan for related addresses
   -s Suppress addresses with a zero balance
   -i Indent to show relationships; useful when doing a recursive scan
   -t Test addresses 18WaqDnNRbXpbfgGAv5bC7spb366c4CCfX used for scan
-  -c Calls made to external servers are reported
+  -e Calls made to external servers are reported
+  -c Includes inputs that appear to be using a related addr to store change
+  -m Max results, enter as -m300 to limit results to 300 [Default:50]
+  -p Use parallel queries to Blockchain.info to increase speed. [Experimental]
 
 eg. RELATEDADDRESSES.PY -r -s 18WaqDnNRbXpbfgGAv5bC7spb366c4CCfX
 ```
@@ -65,8 +68,6 @@ Limitations
 * Only limited testing has been done
 * Relies on JSON responses from Blockchain.info that can sometimes be slow. Queries are not yet done asynchronously 
 * Graceful error handling not yet implemented
-* No upper limit on related addresses has been implemented yet. i.e. If there are 100 million related addresses, it will run until it runs out of memory
-
 
 Related Accounts Identification
 -------------------------------
