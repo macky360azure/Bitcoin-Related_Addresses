@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 import sys, os
+from datetime import datetime
 from lib.blockchainquery import core as bq
 from lib.bitcoinvalidation import addressvalidation as bv
 
 EXAMPLE_ADDRESS = '18WaqDnNRbXpbfgGAv5bC7spb366c4CCfX'
 
-def generate_related_report(recursive, indent, suppresszero, includechangeinputs, maxresult, *addresses):
+def generate_related_report(recursive, indent, suppresszero, includechangeinputs, maxresult, parallel, *addresses):
     '''Uses various techniques to identify addresses related and generates a report
 
     '''
@@ -22,7 +23,7 @@ def generate_related_report(recursive, indent, suppresszero, includechangeinputs
     print('')
     print("Please wait...") 
 
-    related_addr_dict = bq.getRelatedAddresses(recursive, includechangeinputs, maxresult, None, *addresses)
+    related_addr_dict = bq.getRelatedAddresses(recursive, includechangeinputs, maxresult, parallel, None, *addresses)
     running_balance = 0
   
     #Generate text report
@@ -85,7 +86,7 @@ def show_help():
     filename = os.path.basename(__file__)
     print('Reports the balances of any related bitcoin addresses.')
     print('')
-    print('{} [-r][-s][-d][-t][-m] Address1 Address2 ...'.format(filename.upper()))
+    print('{} [-r][-s][-d][-t][-m][-p] Address1 Address2 ...'.format(filename.upper()))
     print('')
     print('  -r Recursively scan for related addresses')
     print('  -s Suppress addresses with a zero balance')
@@ -93,7 +94,8 @@ def show_help():
     print('  -t Test addresses {0} used for scan'.format(EXAMPLE_ADDRESS))
     print('  -e Calls made to external servers are reported')
     print('  -c Includes inputs that appear to be using a related addresses to store change')
-    print('  -m Max results, enter as -m300 to limit results to 300. [Default:50]')
+    print('  -m Max results, enter as -m300 to limit results to 300 [Default:50]')
+    print('  -p Use Parallel queries to Blockchain.info to increase speed. [Experimental]')
     print('')
     print('eg. {0} -r -s {1}'.format(filename.upper(),EXAMPLE_ADDRESS))
     print('')
@@ -102,15 +104,19 @@ def show_help():
 if __name__ == '__main__':
     
     showhelp = False
+    parallel = False
     recurse = False
     usetestaddress = False
     suppresszero = False
     indent = False
     reportcalls = False
     includechangeinputs = False
+    showtime = False
     addresses = []
     unknownflags = []
     maxresults = 50
+    startTime = datetime.now()
+
     if len(sys.argv) ==1: showhelp = True 
     else:
         for flag in sys.argv[1:]:
@@ -121,6 +127,7 @@ if __name__ == '__main__':
             elif flag == '-i': indent = True
             elif flag == '-e': reportcalls = True
             elif flag == '-c': includechangeinputs = True
+            elif flag == '-p': parallel = True
             elif flag.startswith('-m'): 
                 try:
                     maxresults = int(flag[2:])
@@ -141,10 +148,12 @@ if __name__ == '__main__':
     elif showhelp:
         show_help()
     elif usetestaddress:
-        generate_related_report(recurse, indent, suppresszero, includechangeinputs, maxresults, EXAMPLE_ADDRESS)
+        generate_related_report(recurse, indent, suppresszero, includechangeinputs, maxresults, parallel, EXAMPLE_ADDRESS)
+        showtime = True
     else :
-        generate_related_report(recurse, indent, suppresszero, includechangeinputs, maxresults, *addresses)
-    
+        generate_related_report(recurse, indent, suppresszero, includechangeinputs, maxresults, parallel, *addresses)
+        showtime = True
+
     if indent:
         print('')
         print('Address Prefix Key')
@@ -165,4 +174,6 @@ if __name__ == '__main__':
         print('Calls to blockchain.info requesting information on addresses: ' + str(bq._get_address_info_cache_misses))
         print('Calls to blockchain.info requesting information on blocks: ' + str(bq._get_block_info_cache_misses))
 
-
+    if showtime:
+        print('')
+        print('Report took {} seconds to generate'.format((datetime.now()-startTime).total_seconds()))

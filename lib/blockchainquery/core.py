@@ -1,5 +1,6 @@
 import os, sys #used to extract path to project lib
 import json
+from multiprocessing import Process, Queue
 import datetime as dt
 from urllib2 import Request, urlopen, URLError
 
@@ -16,6 +17,23 @@ _get_block_info_cache_misses = 0
 def SATOSHIS_IN_A_BITCOIN():
     return 100000000
 
+def doAddressQuery(queue,address):
+    '''Returns the json response sent by blockchain.info'''
+    balanceurl = 'http://blockchain.info/address/{0}?format=json'
+    formatted = balanceurl.format(address)
+    request = Request(formatted)
+    try:
+        response = urlopen(request)
+        jsonread = response.read()
+    except URLError as e:
+        #TODO:Need to cusomise this error
+        print('Could not retrive the address balance, received the following error: {}', e)
+    
+    # Let's extract and cleanup the response
+    btc_info_addr_json =  json.loads(jsonread)
+    queue.put(btc_info_addr_json)
+    #return btc_info_addr_json
+
 def getAddressInfo(*addresses):
     '''Returns a dictionary object from the json response set by blockchain.info: 
     address = bitcoin address
@@ -31,6 +49,7 @@ def getAddressInfo(*addresses):
     global _get_address_info_cache_misses 
     global _get_address_info_misses
     btc_info_addr_json_list = []
+    addr_to_query = []
     for addr in addresses:
 
         # First check if we are in the cache, if so we grab from cache and continue to next interation
@@ -38,25 +57,30 @@ def getAddressInfo(*addresses):
             if _address_query_cache[addr][0] < dt.datetime.utcnow() + dt.timedelta(seconds = CACHE_LIFE_IN_SECONDS):
                 btc_info_addr_json_list.append(_address_query_cache[addr][1])
                 continue
-
         _get_address_info_cache_misses  +=1
         
-        # If we didn't find in cache then we look it up
-        balanceurl = 'http://blockchain.info/address/{0}?format=json'
-        formatted = balanceurl.format(addr)
-        request = Request(formatted)
-        try:
-            response = urlopen(request)
-            jsonread = response.read()
-        except URLError as e:
-            #TODO:Need to cusomise this error
-            print('Could not retrive the address balance, received the following error: {}', e)
-    
-        # Let's extract and cleanup the response
-        btc_info_addr_json =  json.loads(jsonread)
+        # If we didn't find in cache then we batch it for querying
+        addr_to_query.append(addr)
+
+
+    # Lets do the queries in ||
+    pList=list()
+    queue = Queue()
+
+    for addr in addr_to_query: 
+        p = Process(target=doAddressQuery, args=(queue, addr))
+        pList.append(p)
+        p.start()
+
+    for p in pList:
+        btc_info_addr_json = queue.get()
         doFixTransactionResultValue(btc_info_addr_json)
+        addr = btc_info_addr_json['address']
         _address_query_cache[addr] = (dt.datetime.utcnow(),btc_info_addr_json) #save a tuple with the time
         btc_info_addr_json_list.append(btc_info_addr_json)
+
+    for p in pList:
+        p.join()
 
     return btc_info_addr_json_list
 
@@ -137,7 +161,7 @@ def doFixTransactionResultValue(addressobject):
         tx['my_est_USD_result']=result * rate / SATOSHIS_IN_A_BITCOIN()  #lets save the USD value at the time of the transaction
 
 
-def getRelatedAddresses(recursive = False, scan_change_inputs = False, maxresult =200, related_addr_dic = None,  *addresses):
+def getRelatedAddresses(recursive = False, scan_change_inputs = False, maxresult =200, parallel = False, related_addr_dic = None,  *addresses):
     '''Returns a dictionary of related addresses (key=address, relationidentified= address, relationtype=[Change,Fellow]). 
     Related addresses are defined as address that
     have been used in conjunction with the provided address on the input side of a transaction. The 
@@ -219,12 +243,19 @@ def getRelatedAddresses(recursive = False, scan_change_inputs = False, maxresult
                                 if len(related_addr_dic)<maxresult:
                                     newly_identified_related_addresses.append(input_addr)
                                     related_addr_dic[input_addr] = {'relation':addr,'relationtype':'parent change','txhash':tx['hash']} # Add this address
-                                    
+            
+            #Lets asyncronously request any addresses (they will be cached by the method even if we dont use them)
+            if parallel:
+                info = getAddressInfo(*newly_identified_related_addresses)
+                                                  
             # Recurse if required
             if recursive:
                 if len(related_addr_dic)<maxresult:
                     for addr in newly_identified_related_addresses:
-                        getRelatedAddresses(True, scan_change_inputs, maxresult, related_addr_dic, addr)
+                        getRelatedAddresses(True, scan_change_inputs, maxresult, parallel, related_addr_dic, addr)
+
+                   
+
                           
     return related_addr_dic
 
