@@ -93,7 +93,7 @@ def show_help():
     print('  -i Indent to show relationships; useful when doing a recursive scan')
     print('  -t Test addresses {0} used for scan'.format(EXAMPLE_ADDRESS))
     print('  -e Calls made to external servers are reported')
-    print('  -c Includes inputs that appear to be using a related addresses to store change')
+    print('  -c Includes inputs that appear to be using a related addr to store change')
     print('  -m Max results, enter as -m300 to limit results to 300 [Default:50]')
     print('  -p Use Parallel queries to Blockchain.info to increase speed. [Experimental]')
     print('')
