@@ -2,7 +2,7 @@
 import sys, os
 PY_VERSION = sys.version_info
 
-if PY_VERSION != (2, 7):
+if PY_VERSION.major != 2 and PY_VERSION.minor != 7:
     print("This application requires Python 2.7. You are using Python %d.%d."
           % (PY_VERSION.major, PY_VERSION.minor))
     sys.exit(1)
