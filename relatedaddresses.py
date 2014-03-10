@@ -1,5 +1,12 @@
 #!/usr/bin/env python
 import sys, os
+PY_VERSION = sys.version_info
+
+if PY_VERSION != (2, 7):
+    print("This application requires Python 2.7. You are using Python %d.%d."
+          % (PY_VERSION.major, PY_VERSION.minor))
+    sys.exit(1)
+
 from datetime import datetime
 from lib.blockchainquery import core as bq
 from lib.bitcoinvalidation import addressvalidation as bv
